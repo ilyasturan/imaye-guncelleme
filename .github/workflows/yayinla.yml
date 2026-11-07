@@ -1,0 +1,36 @@
+# İMAYE Platform — sürüm yayınlama
+# "yukleme" dalına parçalı kurulum dosyası + latest.yml gelince parçaları birleştirir,
+# sha512'yi doğrular, GitHub sürümü (release) oluşturur ve dalı siler.
+name: Sürümü yayınla
+on:
+  push:
+    branches: [yukleme]
+permissions:
+  contents: write
+jobs:
+  yayinla:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: yukleme
+      - name: Parçaları birleştir ve doğrula
+        run: |
+          set -e
+          cd paket
+          VER=$(grep '^version:' latest.yml | awk '{print $2}')
+          EXE=$(grep '^path:' latest.yml | awk '{print $2}')
+          cat "$EXE".part* > "$EXE"
+          WANT=$(grep '^sha512:' latest.yml | awk '{print $2}')
+          GOT=$(openssl dgst -sha512 -binary "$EXE" | base64 -w0)
+          [ "$WANT" = "$GOT" ] || { echo "sha512 uyuşmuyor"; exit 1; }
+          echo "VER=$VER" >> $GITHUB_ENV
+          echo "EXE=$EXE" >> $GITHUB_ENV
+      - name: Sürümü oluştur
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd paket
+          gh release create "v$VER" "$EXE" "$EXE.blockmap" latest.yml --repo "$GITHUB_REPOSITORY" --title "İMAYE Platform $VER" --notes-file NOTLAR.md --target main
+      - name: Yükleme dalını sil
+        run: git push origin --delete yukleme
